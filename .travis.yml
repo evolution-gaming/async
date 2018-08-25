@@ -1,0 +1,30 @@
+dist: trusty
+sudo: false
+
+language: scala
+
+scala:
+  - 2.12.6
+  - 2.11.12
+
+jdk: oraclejdk8
+
+script: sbt ++$TRAVIS_SCALA_VERSION clean coverage test
+
+after_success: sbt ++$TRAVIS_SCALA_VERSION coverageReport coveralls
+
+notifications:
+  slack:
+    on_success: never
+    on_failure: always
+    rooms:
+      secure: "BBNtmjs+VfLt5QpGuoGYxxB7RnVC3PoT1O4MyK7FqrojhCFhiA5Z7vz1tJT8Z8HQBqIkSlGaRBFI/3t3+VGa3a2k4NsN5F+EcXIKp7dlUKmHSvElA3/28uSpQJI6EUA63n3ua1ayT5OGX3gDgUOp1Lxej6YK1dSmHrG2iUo9RsOJmTLofHm1XfjdyOor/luq6oxXJv7uonsV4AOJWfuwVvVG1oFoCBJdfdTgYTiq02L/vsJv4yFJnHFEXOHEv+N32YEGdeTiZg+MBT0Lk1Tsyb3mK4+937iGgxrPS2CYCrPWbzHbsqfMW+3j8TuKzI/a4i29lFiQoUjZ+h+jVRUxoivzMtFa0Gomp62izr7yMlZVXaP59Y9Zgx4Jun7HbON2dnSTRpZfC3gihtkgTHwvK2ZRFbAlGdU4bSWL01FqYXFNIHhuxCZ0hsAk0IEudSy+yruovsDq4XnSrhwCqGiC/YbusbnXs/K4ZyIEfiSaS5vRxUMNkKc6qWVZ/WyTidCyJByek2ZgcntkD89N2h06t6OzX/5wS6pZufCNMK5MHG0o3cUo8ZpkiB/WNcJ3wDAdlixYmC4EU1C5fVw1QaZiopn+T7nQYXaTgZ2XDaF4DBwPRJG58/QBDek/On/8r9Yt/3TEigzXml6GlxG81lMbWNrvw7Ax3B02kVIvppPjVbk="
+
+cache:
+  directories:
+    - $HOME/.ivy2/cache
+    - $HOME/.sbt
+
+before_cache:
+  - find $HOME/.ivy2/cache -name "ivydata-*.properties" -print -delete
+  - find $HOME/.sbt        -name "*.lock"               -print -delete
