@@ -1,6 +1,5 @@
 package com.evolutiongaming.concurrent.async
 
-import com.evolutiongaming.concurrent.CurrentThreadExecutionContext
 import com.evolutiongaming.concurrent.FutureHelper._
 
 import scala.annotation.tailrec
@@ -9,37 +8,41 @@ import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.control.NonFatal
 import scala.util.{Failure, Success, Try}
 
-sealed trait Async[+T] {
+sealed trait Async[+A] {
 
-  def foreach[TT](f: T => TT): Unit
+  def foreach[B](f: A => B): Unit
 
-  def map[TT](f: T => TT): Async[TT]
+  def map[B](f: A => B): Async[B]
 
-  def flatMap[TT](f: T => Async[TT]): Async[TT]
+  def flatMap[B](f: A => Async[B]): Async[B]
 
-  def mapTry[TT](f: Try[T] => Try[TT]): Async[TT]
+  def mapTry[B](f: Try[A] => Try[B]): Async[B]
 
-  def value(): Option[Try[T]]
+  def value(): Option[Try[A]]
 
-  def future: Future[T]
+  def future: Future[A]
 
-  def get(timeout: Duration = Duration.Inf): T
+  def get(timeout: Duration = Duration.Inf): A
 
-  def await(timeout: Duration = Duration.Inf): Async[T]
+  def await(timeout: Duration = Duration.Inf): Async[A]
 
-  def onComplete[TT](f: Try[T] => TT): Unit
+  def onComplete[B](f: Try[A] => B): Unit
 
-  def onSuccess[TT](f: T => TT): Unit
+  def onSuccess[B](f: A => B): Unit
 
-  def onFailure[TT](f: Throwable => TT): Unit
+  def onFailure[B](f: Throwable => B): Unit
 
-  def recover[TT >: T](pf: PartialFunction[Throwable, TT]): Async[TT]
+  def recover[B >: A](pf: PartialFunction[Throwable, B]): Async[B]
 
-  def flatten[TT](implicit ev: T <:< Async[TT]): Async[TT] = flatMap(ev)
+  def redeem[B](err: Throwable => Async[B], succ: A => Async[B]): Async[B]
+
+  def redeemPure[B](err: Throwable => B, succ: A => B): Async[B]
+
+  final def flatten[B](implicit ev: A <:< Async[B]): Async[B] = flatMap(ev)
 
   final def unit: Async[Unit] = flatMap(_ => Async.unit)
 
-  final def withFilter(p: T => Boolean): Async[T] = {
+  final def withFilter(p: A => Boolean): Async[A] = {
     map { v =>
       if (p(v)) v
       else throw new NoSuchElementException("Async.filter predicate is not satisfied")
@@ -55,34 +58,34 @@ object Async {
   private val futureNil = Nil.async
 
 
-  def apply[T](value: T): Async[T] = Succeed(value)
+  def apply[A](value: A): Async[A] = Succeed(value)
 
-  def apply[T](future: Future[T])(implicit ec: ExecutionContext): Async[T] = {
+  def apply[A](future: Future[A])(implicit ec: ExecutionContext): Async[A] = {
     future.value match {
       case Some(value) => completed(value)
       case None        => InCompleted(future)
     }
   }
 
-  def succeed[T](value: T): Async[T] = Succeed(value)
+  def succeed[A](value: A): Async[A] = Succeed(value)
 
-  def failed[T](value: Throwable): Async[T] = Failed(value)
+  def failed[A](value: Throwable): Async[A] = Failed(value)
 
-  def completed[T](value: Try[T]): Async[T] = Completed(value)
+  def completed[A](value: Try[A]): Async[A] = Completed(value)
 
-  def async[T](f: => T)(implicit ec: ExecutionContext): Async[T] = InCompleted(Future(f)(ec))
+  def async[A](f: => A)(implicit ec: ExecutionContext): Async[A] = InCompleted(Future(f)(ec))
 
-//  def never[T]: Async[T] = Async(Future.never)(CurrentThreadExecutionContext)
+  //  def never[A]: Async[A] = Async(Future.never)(CurrentAhreadExecutionContext)
 
   val unit: Async[Unit] = ().async
 
-  def none[T]: Async[Option[T]] = futureNone
+  def none[A]: Async[Option[A]] = futureNone
 
-  def seq[T]: Async[Seq[T]] = futureSeq
+  def seq[A]: Async[Seq[A]] = futureSeq
 
-  def nil[T]: Async[List[T]] = futureNil
+  def nil[A]: Async[List[A]] = futureNil
 
-  def fold[T, S](iter: Iterable[T], s: S)(f: (S, T) => Async[S]): Async[S] = {
+  def fold[A, S](iter: Iterable[A], s: S)(f: (S, A) => Async[S]): Async[S] = {
 
     val iterator = iter.iterator
 
@@ -109,26 +112,27 @@ object Async {
   }
 
 
-  def foldUnit[T](iter: Iterable[Async[T]]): Async[Unit] = fold(iter, ()) { (_, x) => x.unit }
+  def foldUnit[A](iter: Iterable[Async[A]]): Async[Unit] = fold(iter, ()) { (_, x) => x.unit }
 
 
-  sealed trait Completed[+T] extends Async[T] {
+  sealed trait Completed[+A] extends Async[A] {
+    self =>
 
-    def valueTry: Try[T]
+    def valueTry: Try[A]
 
     final def value() = Some(valueTry)
 
-    final def mapTry[TT](f: Try[T] => Try[TT]): Async[TT] = safe { Completed(f(valueTry)) }
+    final def mapTry[B](f: Try[A] => Try[B]): Async[B] = safe { Completed(f(valueTry)) }
 
     def future = Future.fromTry(valueTry)
 
-    def onComplete[TT](f: Try[T] => TT): Unit = safeUnit { f(valueTry) }
+    def onComplete[B](f: Try[A] => B): Unit = safeUnit { f(valueTry) }
 
-    final def await(timeout: Duration) = this
+    final def await(timeout: Duration) = self
   }
 
   object Completed {
-    def apply[T](value: Try[T]): Completed[T] = {
+    def apply[A](value: Try[A]): Completed[A] = {
       value match {
         case Success(value) => Succeed(value)
         case Failure(value) => Failed(value)
@@ -137,55 +141,66 @@ object Async {
   }
 
 
-  final case class Succeed[T] private(v: T) extends Completed[T] {
+  final case class Succeed[A] private(v: A) extends Completed[A] {
+    self =>
 
     def valueTry = Success(v)
 
-    def foreach[TT](f: T => TT) = safeUnit { f(v) }
+    def foreach[B](f: A => B) = safeUnit { f(v) }
 
-    def map[TT](f: T => TT) = safe { Succeed(f(v)) }
+    def map[B](f: A => B) = safe { Succeed(f(v)) }
 
-    def flatMap[TT](f: T => Async[TT]) = safe { f(v) }
+    def flatMap[B](f: A => Async[B]) = safe { f(v) }
 
     def get(timeout: Duration) = v
 
-    def onSuccess[TT](f: T => TT) = safeUnit { f(v) }
+    def onSuccess[B](f: A => B) = safeUnit { f(v) }
 
-    def onFailure[TT](f: Throwable => TT) = {}
+    def onFailure[B](f: Throwable => B) = {}
 
-    def recover[TT >: T](pf: PartialFunction[Throwable, TT]) = this
+    def recover[B >: A](pf: PartialFunction[Throwable, B]) = self
+
+    def redeem[B](err: Throwable => Async[B], succ: A => Async[B]) = self.flatMap(succ)
+
+    def redeemPure[B](err: Throwable => B, succ: A => B) = self.map(succ)
 
     override def toString = s"Async($v)"
   }
 
 
   final case class Failed private(v: Throwable) extends Completed[Nothing] {
+    self =>
 
     def valueTry = Failure(v)
 
-    def foreach[TT](f: Nothing => TT) = {}
+    def foreach[B](f: Nothing => B) = {}
 
-    def map[TT](f: Nothing => TT) = this
+    def map[B](f: Nothing => B) = self
 
-    def flatMap[TT](f: Nothing => Async[TT]) = this
+    def flatMap[B](f: Nothing => Async[B]) = self
 
     def get(timeout: Duration) = throw v
 
-    def onSuccess[TT](f: Nothing => TT) = {}
+    def onSuccess[B](f: Nothing => B) = {}
 
-    def onFailure[TT](f: Throwable => TT) = safeUnit { f(v) }
+    def onFailure[B](f: Throwable => B) = safeUnit { f(v) }
 
-    def recover[TT >: Nothing](pf: PartialFunction[Throwable, TT]) = {
-      safe { if (pf.isDefinedAt(v)) Succeed(pf(v)) else this }
+    def recover[B >: Nothing](pf: PartialFunction[Throwable, B]) = {
+      safe { if (pf.isDefinedAt(v)) Succeed(pf(v)) else self }
     }
+
+    def redeem[B](err: Throwable => Async[B], succ: Nothing => Async[B]) = safe { err(v) }
+
+    def redeemPure[B](err: Throwable => B, succ: Nothing => B) = safe { Succeed(err(v)) }
 
     override def toString = s"Async($v)"
   }
 
 
-  final case class InCompleted[T] private(v: Future[T])(implicit ec: ExecutionContext) extends Async[T] {
+  final case class InCompleted[A] private(v: Future[A])(implicit ec: ExecutionContext) extends Async[A] {
+    self =>
 
-    def foreach[TT](f: T => TT) = {
+    def foreach[B](f: A => B) = {
       v.value match {
         case Some(Success(v)) => safeUnit { f(v) }
         case Some(Failure(v)) =>
@@ -193,7 +208,7 @@ object Async {
       }
     }
 
-    def map[TT](f: T => TT) = {
+    def map[B](f: A => B) = {
       v.value match {
         case Some(Success(v)) => safe { Succeed(f(v)) }
         case Some(Failure(v)) => Failed(v)
@@ -201,14 +216,14 @@ object Async {
       }
     }
 
-    def mapTry[TT](f: Try[T] => Try[TT]): Async[TT] = {
+    def mapTry[B](f: Try[A] => Try[B]): Async[B] = {
       v.value match {
         case Some(v) => safe { Completed(f(v)) }
         case None    => InCompleted(FutureOps(v).transform(f))
       }
     }
 
-    def flatMap[TT](f: T => Async[TT]) = {
+    def flatMap[B](f: A => Async[B]) = {
       v.value match {
         case Some(Success(v)) => safe { f(v) }
         case Some(Failure(v)) => Failed(v)
@@ -235,24 +250,24 @@ object Async {
       }
     }
 
-    def onComplete[TT](f: Try[T] => TT): Unit = {
+    def onComplete[B](f: Try[A] => B): Unit = {
       v.value match {
         case Some(v) => safeUnit { f(v) }
         case None    => future.onComplete(f)
       }
     }
 
-    def onSuccess[TT](f: T => TT) = onComplete {
+    def onSuccess[B](f: A => B) = onComplete {
       case Success(v) => f(v)
       case Failure(v) =>
     }
 
-    def onFailure[TT](f: Throwable => TT) = onComplete {
+    def onFailure[B](f: Throwable => B) = onComplete {
       case Success(v) =>
       case Failure(v) => f(v)
     }
 
-    def recover[TT >: T](pf: PartialFunction[Throwable, TT]) = {
+    def recover[B >: A](pf: PartialFunction[Throwable, B]) = {
       v.value match {
         case Some(Success(v)) => Succeed(v)
         case Some(Failure(v)) => safe { if (pf.isDefinedAt(v)) Succeed(pf(v)) else Failed(v) }
@@ -260,22 +275,47 @@ object Async {
       }
     }
 
+    def redeem[B](err: Throwable => Async[B], succ: A => Async[B]) = {
+      v.value match {
+        case Some(Success(v)) => safe { succ(v) }
+        case Some(Failure(v)) => safe { err(v) }
+        case None             =>
+          val result = future
+            .flatMap(succ(_).future)
+            .recoverWith { case v => err(v).future }
+          InCompleted(result)
+      }
+    }
+
+    def redeemPure[B](err: Throwable => B, succ: A => B) = {
+      v.value match {
+        case Some(Success(v)) => safe { Succeed(succ(v)) }
+        case Some(Failure(v)) => safe { Succeed(err(v)) }
+        case None             =>
+          val result = FutureOps(v).transform {
+            case Success(v) => Try(succ(v))
+            case Failure(v) => Try(err(v))
+          }
+          InCompleted(result)
+      }
+    }
+
     override def toString = "Async(<not completed>)"
   }
 
 
-  private def safe[T](f: => Async[T]): Async[T] = try f catch { case NonFatal(failure) => Failed(failure) }
+  private def safe[A](f: => Async[A]): Async[A] = try f catch { case NonFatal(failure) => Failed(failure) }
 
-  private def safeUnit[T](f: => T): Unit = try f catch { case NonFatal(_) => }
+  private def safeUnit[A](f: => A): Unit = try f catch { case NonFatal(_) => }
 }
 
 
 object AsyncConverters {
-  implicit class FutureAsync[T](val self: Future[T]) extends AnyVal {
-    def async(implicit ec: ExecutionContext): Async[T] = Async(self)
+  implicit class FutureAsync[A](val self: Future[A]) extends AnyVal {
+    def async(implicit ec: ExecutionContext): Async[A] = Async(self)
   }
 
-  implicit class AnyAsync[T](val self: T) extends AnyVal {
-    def async: Async[T] = Async(self)
+  implicit class AnyAsync[A](val self: A) extends AnyVal {
+    def async: Async[A] = Async(self)
   }
 }

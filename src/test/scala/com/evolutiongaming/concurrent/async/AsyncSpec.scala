@@ -41,7 +41,7 @@ class AsyncSpec extends FunSuite with Matchers {
   test("value") {
     Async(1).value shouldEqual Some(Success(1))
     Async.failed(Error).value shouldEqual Some(Failure(Error))
-//    Async.never[Int].value shouldEqual None
+    //    Async.never[Int].value shouldEqual None
   }
 
   test("get") {
@@ -63,6 +63,65 @@ class AsyncSpec extends FunSuite with Matchers {
 
     val inCompleted = list.map(x => Async.async(x))
     Async.fold(inCompleted, "")(foldAsync).await() shouldEqual Async(expected)
+  }
+
+  test("mapTry") {
+    Async(1).mapTry(_.orElse(Success(2))).get(timeout) shouldEqual 1
+    Async.failed(Error).mapTry(_.orElse(Success(2))).get(timeout) shouldEqual 2
+    Async.async(1).mapTry(_.orElse(Success(2))).get(timeout) shouldEqual 1
+  }
+
+  test("redeem") {
+    Async(1).redeem(_ => Async(2), _ => Async(3)).get(timeout) shouldEqual 3
+    Async.failed(Error).redeem(_ => Async(2), _ => Async(3)).get(timeout) shouldEqual 2
+    Async.async(1).redeem(_ => Async(2), _ => Async(3)).get(timeout) shouldEqual 3
+  }
+
+  test("redeemPure") {
+    Async(1).redeemPure(_ => 2, _ => 3).get(timeout) shouldEqual 3
+    Async.failed(Error).redeemPure(_ => 2, _ => 3).get(timeout) shouldEqual 2
+    Async.async(1).redeemPure(_ => 2, _ => 3).get(timeout) shouldEqual 3
+  }
+
+  test("none") {
+    Async.none[Int] shouldEqual Async(None)
+  }
+
+  test("nil") {
+    Async.nil[Int] shouldEqual Async(Nil)
+  }
+
+  test("onComplete") {
+    var n = 0
+    Async(1).onComplete { x => n = x.getOrElse(2) }
+    n shouldEqual 1
+
+    Async.failed(Error).onComplete { x => n = x.getOrElse(2) }
+    n shouldEqual 2
+  }
+
+  test("onFailure") {
+    var n = 0
+    Async(1).onFailure { _ => n = 1 }
+    n shouldEqual 0
+
+    Async.failed(Error).onFailure { _ => n = 2 }
+    n shouldEqual 2
+  }
+
+  test("onSuccess") {
+    var n = 0
+    Async(1).onSuccess { _ => n = 1 }
+    n shouldEqual 1
+
+    Async.failed(Error).onSuccess { _ => n = 2 }
+    n shouldEqual 1
+  }
+
+  test("recover") {
+    Async(1).recover { case _ => 2 }.get(timeout) shouldEqual 1
+    Async.failed(Error).recover { case _ => 2 }.get(timeout) shouldEqual 2
+    Async.async(1).recover { case _ => 2 }.get(timeout) shouldEqual 1
   }
 
   private case object Error extends RuntimeException with NoStackTrace
