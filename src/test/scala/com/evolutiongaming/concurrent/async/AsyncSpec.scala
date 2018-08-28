@@ -3,6 +3,7 @@ package com.evolutiongaming.concurrent.async
 import org.scalatest.{FunSuite, Matchers}
 
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Promise
 import scala.concurrent.duration._
 import scala.util.control.NoStackTrace
 import scala.util.{Failure, Success}
@@ -83,12 +84,20 @@ class AsyncSpec extends FunSuite with Matchers {
     Async.async(1).redeemPure(_ => 2, _ => 3).get(timeout) shouldEqual 3
   }
 
+  test("unit") {
+    Async.unit shouldEqual Async(())
+  }
+
   test("none") {
     Async.none[Int] shouldEqual Async(None)
   }
 
   test("nil") {
     Async.nil[Int] shouldEqual Async(Nil)
+  }
+
+  test("seq") {
+    Async.seq[Int] shouldEqual Async(Seq.empty)
   }
 
   test("onComplete") {
@@ -124,5 +133,18 @@ class AsyncSpec extends FunSuite with Matchers {
     Async.async(1).recover { case _ => 2 }.get(timeout) shouldEqual 1
   }
 
-  private case object Error extends RuntimeException with NoStackTrace
+  test("toString") {
+    Async(1).toString shouldEqual "Async(1)"
+    Async.failed(Error).toString shouldEqual "Async(Error)"
+    val promise = Promise[Int]
+    Async(promise.future).toString shouldEqual "Async(<not completed>)"
+  }
+
+  test("flatten") {
+    Async(Async(1)).flatten.get(timeout) shouldEqual 1
+  }
+
+  private case object Error extends RuntimeException with NoStackTrace {
+    override def toString = "Error"
+  }
 }
