@@ -18,6 +18,10 @@ sealed trait Async[+A] {
 
   def mapTry[B](f: Try[A] => Try[B]): Async[B]
 
+  def mapFailure(f: Throwable => Throwable): Async[A]
+
+  def flatMapFailure[B >: A](f: Throwable => Async[B]): Async[B]
+
   def value(): Option[Try[A]]
 
   def future: Future[A]
@@ -33,6 +37,8 @@ sealed trait Async[+A] {
   def onFailure[B](f: Throwable => B): Unit
 
   def recover[B >: A](pf: PartialFunction[Throwable, B]): Async[B]
+
+  def recoverWith[B >: A](pf: PartialFunction[Throwable, Async[B]]): Async[B]
 
   def redeem[B](err: Throwable => Async[B], succ: A => Async[B]): Async[B]
 
@@ -115,14 +121,15 @@ object Async {
   def foldUnit[A](iter: Iterable[Async[A]]): Async[Unit] = fold(iter, ()) { (_, x) => x.unit }
 
 
-  sealed trait Completed[+A] extends Async[A] {
-    self =>
+  sealed trait Completed[+A] extends Async[A] { self =>
 
     def valueTry: Try[A]
 
     final def value() = Some(valueTry)
 
     final def mapTry[B](f: Try[A] => Try[B]): Async[B] = safe { Completed(f(valueTry)) }
+
+    final def mapFailure(f: Throwable => Throwable) = flatMapFailure(failure => Failed(f(failure)))
 
     def future = Future.fromTry(valueTry)
 
@@ -141,8 +148,7 @@ object Async {
   }
 
 
-  final case class Succeed[A] private(v: A) extends Completed[A] {
-    self =>
+  final case class Succeed[A] private(v: A) extends Completed[A] { self =>
 
     def valueTry = Success(v)
 
@@ -152,6 +158,8 @@ object Async {
 
     def flatMap[B](f: A => Async[B]) = safe { f(v) }
 
+    def flatMapFailure[B >: A](f: Throwable => Async[B]) = this
+
     def get(timeout: Duration) = v
 
     def onSuccess[B](f: A => B) = safeUnit { f(v) }
@@ -159,6 +167,8 @@ object Async {
     def onFailure[B](f: Throwable => B) = {}
 
     def recover[B >: A](pf: PartialFunction[Throwable, B]) = self
+
+    def recoverWith[B >: A](pf: PartialFunction[Throwable, Async[B]]) = self
 
     def redeem[B](err: Throwable => Async[B], succ: A => Async[B]) = self.flatMap(succ)
 
@@ -168,8 +178,7 @@ object Async {
   }
 
 
-  final case class Failed private(v: Throwable) extends Completed[Nothing] {
-    self =>
+  final case class Failed private(v: Throwable) extends Completed[Nothing] { self =>
 
     def valueTry = Failure(v)
 
@@ -178,6 +187,8 @@ object Async {
     def map[B](f: Nothing => B) = self
 
     def flatMap[B](f: Nothing => Async[B]) = self
+
+    def flatMapFailure[B >: Nothing](f: Throwable => Async[B]) = safe { f(v) }
 
     def get(timeout: Duration) = throw v
 
@@ -189,6 +200,10 @@ object Async {
       safe { if (pf.isDefinedAt(v)) Succeed(pf(v)) else self }
     }
 
+    def recoverWith[B >: Nothing](pf: PartialFunction[Throwable, Async[B]]) = {
+      safe { if (pf.isDefinedAt(v)) pf(v) else self }
+    }
+
     def redeem[B](err: Throwable => Async[B], succ: Nothing => Async[B]) = safe { err(v) }
 
     def redeemPure[B](err: Throwable => B, succ: Nothing => B) = safe { Succeed(err(v)) }
@@ -197,8 +212,7 @@ object Async {
   }
 
 
-  final case class InCompleted[A] private(v: Future[A])(implicit ec: ExecutionContext) extends Async[A] {
-    self =>
+  final case class InCompleted[A] private(v: Future[A])(implicit val ec: ExecutionContext) extends Async[A] { self =>
 
     def foreach[B](f: A => B) = {
       v.value match {
@@ -233,6 +247,22 @@ object Async {
             v <- f(v).future
           } yield v
           InCompleted(result)
+      }
+    }
+
+    def mapFailure(f: Throwable => Throwable) = {
+      v.value match {
+        case Some(Success(v)) => Succeed(v)
+        case Some(Failure(v)) => safe { Failed(f(v)) }
+        case None             => InCompleted(v.recover { case v => throw f(v) })
+      }
+    }
+
+    def flatMapFailure[B >: A](f: Throwable => Async[B]) = {
+      v.value match {
+        case Some(Success(v)) => Succeed(v)
+        case Some(Failure(v)) => safe { f(v) }
+        case None             => InCompleted(v.recoverWith { case v => f(v).future })
       }
     }
 
@@ -272,6 +302,14 @@ object Async {
         case Some(Success(v)) => Succeed(v)
         case Some(Failure(v)) => safe { if (pf.isDefinedAt(v)) Succeed(pf(v)) else Failed(v) }
         case None             => InCompleted(v.recover(pf))
+      }
+    }
+
+    def recoverWith[B >: A](pf: PartialFunction[Throwable, Async[B]]) = {
+      v.value match {
+        case Some(Success(v)) => Succeed(v)
+        case Some(Failure(v)) => safe { if (pf.isDefinedAt(v)) pf(v) else Failed(v) }
+        case None             => InCompleted(v.recoverWith(pf.andThen(_.future)))
       }
     }
 

@@ -133,6 +133,12 @@ class AsyncSpec extends FunSuite with Matchers {
     Async.async(1).recover { case _ => 2 }.get(timeout) shouldEqual 1
   }
 
+  test("recoverWith") {
+    Async(1).recoverWith { case _ => Async(2) }.get(timeout) shouldEqual 1
+    Async.failed(Error).recoverWith { case _ => Async(2) }.get(timeout) shouldEqual 2
+    Async.async(1).recoverWith { case _ => Async(2) }.get(timeout) shouldEqual 1
+  }
+
   test("toString") {
     Async(1).toString shouldEqual "Async(1)"
     Async.failed(Error).toString shouldEqual "Async(Error)"
@@ -144,7 +150,23 @@ class AsyncSpec extends FunSuite with Matchers {
     Async(Async(1)).flatten.get(timeout) shouldEqual 1
   }
 
+  test("mapFailure") {
+    Async(1).mapFailure(_ => Error) shouldEqual Async(1)
+    Async.failed(Error).mapFailure(_ => Error1) shouldEqual Async.failed(Error1)
+    the[Error1.type] thrownBy Async.async(throw Error).mapFailure { _ => Error1 }.get(timeout)
+  }
+
+  test("flatMapFailure") {
+    Async(1).flatMapFailure(_ => Async(2)) shouldEqual Async(1)
+    Async.failed(Error).flatMapFailure(_ => Async.failed(Error1)) shouldEqual Async.failed(Error1)
+    the[Error1.type] thrownBy Async.async(throw Error).mapFailure { _ => Error1 }.get(timeout)
+  }
+
   private case object Error extends RuntimeException with NoStackTrace {
     override def toString = "Error"
+  }
+
+  private case object Error1 extends RuntimeException with NoStackTrace {
+    override def toString = "Error1"
   }
 }
