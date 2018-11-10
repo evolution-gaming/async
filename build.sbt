@@ -34,7 +34,7 @@ scalacOptions in (Compile,doc) ++= Seq("-groups", "-implicits", "-no-link-warnin
 resolvers += Resolver.bintrayRepo("evolutiongaming", "maven")
 
 libraryDependencies ++= Seq(
-  "com.evolutiongaming" %% "executor-tools" % "1.0.0",
+  "com.evolutiongaming" %% "executor-tools" % "1.0.1",
   "com.evolutiongaming" %% "future-helper" % "1.0.3",
   "org.scalatest" %% "scalatest" % "3.0.5" % Test)
 
