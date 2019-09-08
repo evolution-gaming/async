@@ -12,32 +12,21 @@ organizationHomepage := Some(url("http://evolutiongaming.com"))
 
 bintrayOrganization := Some("evolutiongaming")
 
-scalaVersion := crossScalaVersions.value.last
+scalaVersion := crossScalaVersions.value.head
 
-crossScalaVersions := Seq("2.11.12", "2.12.7")
-
-scalacOptions ++= Seq(
-  "-encoding", "UTF-8",
-  "-feature",
-  "-unchecked",
-  "-deprecation",
-//  "-Xfatal-warnings",
-  "-Xlint",
-  "-Yno-adapted-args",
-  "-Ywarn-dead-code",
-  "-Ywarn-numeric-widen",
-  "-Xfuture"
-)
+crossScalaVersions := Seq("2.13.0", "2.12.9")
 
 scalacOptions in (Compile,doc) ++= Seq("-groups", "-implicits", "-no-link-warnings")
 
 resolvers += Resolver.bintrayRepo("evolutiongaming", "maven")
 
 libraryDependencies ++= Seq(
-  "com.evolutiongaming" %% "executor-tools" % "1.0.1",
-  "com.evolutiongaming" %% "future-helper" % "1.0.3",
-  "org.scalatest" %% "scalatest" % "3.0.5" % Test)
+  "com.evolutiongaming" %% "executor-tools" % "1.0.2",
+  "com.evolutiongaming" %% "future-helper"  % "1.0.6",
+  "org.scalatest"       %% "scalatest"      % "3.0.8" % Test)
 
 licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT")))
 
 releaseCrossBuild := true
+
+scalacOptsFailOnWarn := Some(false)

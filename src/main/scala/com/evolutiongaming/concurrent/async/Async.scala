@@ -217,7 +217,7 @@ object Async {
     def foreach[B](f: A => B) = {
       v.value match {
         case Some(Success(v)) => safeUnit { f(v) }
-        case Some(Failure(v)) =>
+        case Some(Failure(_)) =>
         case None             => v.foreach(f)
       }
     }
@@ -289,11 +289,11 @@ object Async {
 
     def onSuccess[B](f: A => B) = onComplete {
       case Success(v) => f(v)
-      case Failure(v) =>
+      case Failure(_) =>
     }
 
     def onFailure[B](f: Throwable => B) = onComplete {
-      case Success(v) =>
+      case Success(_) =>
       case Failure(v) => f(v)
     }
 
@@ -344,7 +344,7 @@ object Async {
 
   private def safe[A](f: => Async[A]): Async[A] = try f catch { case NonFatal(failure) => Failed(failure) }
 
-  private def safeUnit[A](f: => A): Unit = try f catch { case NonFatal(_) => }
+  private def safeUnit[A](f: => A): Unit = try { f; () } catch { case NonFatal(_) => }
 }
 
 
